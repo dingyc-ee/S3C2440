@@ -26,6 +26,8 @@ export PATH=$PATH:/usr/local/arm/gcc-3.4.5-glibc-2.3.6/bin
 
 
 ![环境变量](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/1.1%20PATH.png)
+
+
 6. 安装32位库
 ```sh
 # 因为ubuntu是64位系统，arm-linux-gcc是32位的，需要安装32位支持库
@@ -43,4 +45,8 @@ Configured with: /work/tools/create_crosstools/crosstool-0.43/build/arm-linux/gc
 Thread model: posix
 gcc version 3.4.5
 ```
+
+
 ![arm-linux-gcc版本号](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/1.2%20arm-linux-gcc%20version.png)
+
+
