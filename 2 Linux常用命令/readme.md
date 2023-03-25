@@ -102,3 +102,143 @@ ding@linux:~$ which -a pwd
 ding@linux:~$ whereis pwd
 pwd: /usr/bin/pwd /usr/share/man/man1/pwd.1.gz
 ```
+
+## gzip
+
+```sh
+gzip -k     # 保留原文件           
+gzip        # 压缩文件
+gzip -d     # 解压文件(DeCompress)
+```
+
+*测试结果*
+
+```sh
+# 解压缩文件
+ding@linux:~/mypwd$ ls
+pwd.1.gz
+ding@linux:~/mypwd$ gzip -k -d pwd.1.gz 
+ding@linux:~/mypwd$ ls
+pwd.1  pwd.1.gz
+
+# 压缩文件
+ding@linux:~/mypwd$ cp pwd.1 pwd.2
+ding@linux:~/mypwd$ ls
+pwd.1  pwd.1.gz  pwd.2
+ding@linux:~/mypwd$ gzip -k pwd.2 
+ding@linux:~/mypwd$ ls -l
+总计 16
+-rw-r--r-- 1 ding ding 1477  3月 25 20:00 pwd.1
+-rw-r--r-- 1 ding ding  868  3月 25 20:00 pwd.1.gz
+-rw-r--r-- 1 ding ding 1477  3月 25 20:01 pwd.2
+-rw-r--r-- 1 ding ding  874  3月 25 20:01 pwd.2.gz
+```
+
+*注意：同一个文件，文件名不同压缩后的大小也不同*
+
+*注意：gzip只能压缩单个文件，不能压缩目录*
+
+## bzip2
+
+*与gzip命令参数一样*
+
+```sh
+bzip2 -k    # 保留原文件           
+bzip2       # 压缩文件
+bzip2 -d    # 解压文件(DeCompress)
+```
+
+*测试结果*
+
+```sh
+# 压缩文件
+ding@linux:~/mypwd$ bzip2 -k pwd.1 
+ding@linux:~/mypwd$ ls
+pwd.1  pwd.1.bz2
+
+# 解压文件
+ding@linux:~/mypwd$ bzip2 -k -d pwd.1.bz2 
+ding@linux:~/mypwd$ ls
+pwd.1  pwd.1.bz2
+```
+
+*注意：bzip2只能压缩单个文件，不能压缩目录*
+
+*通常小文件用gzip压缩，大文件用bzip2压缩*
+
+## tar
+
+常用选项
+
+```sh
+-c      # create  表示创建文件
+-x      # extract 表示提取文件
+-v      # verbose 显示详细过程
+-z      # gzip    与c结合就是压缩，与x结合就是解压
+-j      # bzip2   与c结合就是压缩，与x结合就是解压
+-f      # file    表示文件
+```
+
+### tar 压缩
+
+```sh
+tar czvf 压缩文件名 目录名  # gzip压缩
+tar cjvf 压缩文件名 目录名  # bzip2压缩
+```
+
+*测试结果*
+
+```sh
+# tar-gzip压缩
+ding@linux:~$ tar czvf mydir.tar.gz mydir/
+mydir/
+mydir/test1.txt
+mydir/test2.txt
+mydir/test/
+mydir/test/test1.txt
+mydir/test/test2.txt
+ding@linux:~$ ls
+公共的  模板  视频  图片  文档  下载  音乐  桌面  mydir  mydir.tar.gz  snap
+
+# tar-bzip2压缩
+ding@linux:~$ tar cjvf mydir.tar.bz2 mydir/
+mydir/
+mydir/test1.txt
+mydir/test2.txt
+mydir/test/
+mydir/test/test1.txt
+mydir/test/test2.txt
+ding@linux:~$ ls
+公共的  视频  文档  音乐  mydir          mydir.tar.gz
+模板    图片  下载  桌面  mydir.tar.bz2  snap
+
+```
+
+### tar 解压
+
+```sh
+tar xzvf 压缩文件名 目录名  # gzip解压
+tar xjvf 压缩文件名 目录名  # bzip2解压
+```
+
+*测试结果*
+
+```sh
+# 解压tar.gz
+ding@linux:~$ tar xzvf mydir.tar.gz 
+mydir/
+mydir/test1.txt
+mydir/test2.txt
+mydir/test/
+mydir/test/test1.txt
+mydir/test/test2.txt
+
+# 解压tar.bz2
+ding@linux:~$ tar xjvf mydir.tar.bz2 
+mydir/
+mydir/test1.txt
+mydir/test2.txt
+mydir/test/
+mydir/test/test1.txt
+mydir/test/test2.txt
+```
