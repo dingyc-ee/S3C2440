@@ -2,6 +2,8 @@
 
 ## _汇编点亮LED_
 
+### _硬件说明_
+
 1. 原理图
 
 *从原理图可以看到，3个LED均为上拉，n_LED中的n表示低电平有效，所以低电平点亮，高电平熄灭。分别接到了CPU芯片GPF4、GPF5、GPF6这3个管脚。*
@@ -63,4 +65,119 @@ JZ2440的BANK0作为NorFlash的Boot区域。
 2440为NAND设计了名为`Steppingstone`的机制，在启动时会把NAND的前4K数据复制到SRAM执行。在通常情况下，Boot启动代码应该要把NAND复制到SDRAM，然后跳转到SDRAM去执行。
 
 ![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/4.11_memory6.png)
+
+### _几条汇编指令_
+
+1. ldr 读内存
+
+```asm
+ldr r0, [r1]            # 假如r1的值为x，读取地址x上的数据(4字节)，保存到r0中
+ldr r0, =0x12345678     # 伪指令，最终会被拆分成几条真正的arm指令
+```
+
+2. str 写内存
+   
+```asm
+str r0, [r1]            # 假如r1的值为x，把r0的值写道地址x(4字节)中
+```
+
+3. b 跳转
+
+4. mov 移动
+
+```asm
+mov r0, r1              # 把r1的值赋给r0
+mov r0, #0x100          # r0的值等于0x100
+```
+
+### _第一个汇编程序_
+
+`led_on.S`
+
+```s
+/*
+ * 点亮LED:GPF4
+ */
+.text
+.global _start
+
+_start:
+
+/* 配置GPF4为输出引脚
+ * 把(0b01 << 8)写入到GPFCON(0x5600 0050)地址处
+ */
+ldr r0, =0x100          // 0x100 = 0b01 << 8
+ldr r1, =0x56000050
+str r0, [r1]
+
+/* 设置GPF4输出低电平
+ * 把(0b0 << 4)写入到GPFDAT(0x5600 0054)地址处
+ */
+ldr r0, =0x0            //
+ldr r1, =0x56000054
+str r0, [r1]
+
+halt:
+    b halt              // 死循环
+```
+
+`Makefile`
+
+```mk
+OBJ := led_on
+
+all:
+	@echo 开始编译...
+	arm-linux-gcc -c -o $(OBJ).o $(OBJ).S
+	arm-linux-ld -Ttext 0 $(OBJ).o -o $(OBJ).elf
+	arm-linux-objcopy -O binary -S $(OBJ).elf $(OBJ).bin
+
+clean:
+	@echo 清理工程...
+	rm -rf $(OBJ).o $(OBJ).bin $(OBJ).elf
+```
+
+### _反汇编_
+
+```
+led_on.elf:     file format elf32-littlearm
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	e3a00c01 	mov	r0, #256	; 0x100
+   4:	e59f1010 	ldr	r1, [pc, #16]	; 1c <.text+0x1c>
+   8:	e5810000 	str	r0, [r1]
+   c:	e3a00000 	mov	r0, #0	; 0x0
+  10:	e59f1008 	ldr	r1, [pc, #8]	; 20 <.text+0x20>
+  14:	e5810000 	str	r0, [r1]
+
+00000018 <halt>:
+  18:	eafffffe 	b	18 <halt>
+  1c:	56000050 	undefined
+  20:	56000054 	undefined
+```
+
+*ARM寄存器说明*
+
+| 寄存器 | 代号 | 说明 |
+|--------|-----|------|
+| r0  | a1 | argument, result registers, r0 to r3 |
+| r1  | a2 | |
+| r2  | a3 | |
+| r3  | a4 | |
+| r4  | v1 | variable registers, r4 to r11, 必须保护 |
+| r5  | v2 | --- |
+| r6  | v3 | |
+| r7  | v4 | |
+| r8  | v5 | |
+| r9  | v6 | |
+| r10 | sl | |
+| r11 | fp | 用来做栈回溯 |
+| r12 | ip | 内部过程调用寄存器 |
+| r13 | sp | stack pointer |
+| r14 | lr | link register |
+| r15 | pc | program counter = 当前指令地址 + 8 |
+
+*可以看到：在CPU的角度，GPFCON和GPFDAT这些寄存器，其实就是内存，没有区别！*
 
