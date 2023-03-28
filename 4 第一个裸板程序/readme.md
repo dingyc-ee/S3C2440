@@ -285,3 +285,268 @@ Disassembly of section .comment:
   10:	Address 0x10 is out of bounds.
 ```
 
+## *C语言内部机制*
+
+1. 为什么要设置栈？
+
+因为C函数要用，如何使用栈？
+
++ 保存局部变量
++ 保存lr等寄存器
+
+2. 调用者怎么传参数给被调用者？
+
+调用者 <--`r0~r3`--> 被调用者，通过这4个寄存器传参
+
+在函数中，`r4~r11`可能被使用，所以要在函数的入口保存，在函数的出口恢复
+
+## *通过r0寄存器给函数传参数*
+
+`start.S`
+
+```s
+.text
+.global _start
+
+_start:
+    // 设置内存栈: SP栈
+    ldr sp, =4096   // nand启动
+
+    ldr r0, =4      // 点亮LED4
+    bl led_on
+
+    ldr r0, =100000
+    bl delay
+
+    ldr r0, =5      // 点亮ELD5
+    bl led_on
+
+    // 死循环
+halt:
+    b halt
+```
+
+`led.c`
+
+```c
+void delay(int i)
+{
+    while (i--);
+}
+
+int led_on(int which)
+{
+    unsigned int *pGPFCON = (unsigned int *)0x56000050;
+    unsigned int *pGPFDAT = (unsigned int *)0x56000054;
+
+    if (which == 4) {
+        *pGPFCON = 1 << 8;      // 配置GPF4为输出引脚
+
+    }
+    else if (which == 5) {
+        *pGPFCON = 1 << 10;     // 配置GPF5为输出引脚
+    }
+    else if (which == 6) {
+        *pGPFCON = 1 << 12;     // 配置GPF5为输出引脚
+    }
+
+    *pGPFDAT = 0;           // GPFDAT输出低电平
+
+    return 0;
+}
+```
+
+`Makefile`
+
+```mk
+
+# $@ 目标文件: 此处为led，即最终要生成的文件
+# $^ 所有依赖 此处为start.o led.o
+# $< 第一个依赖 此处为start.o
+
+led: start.o led.o
+	@echo 开始编译...
+	arm-linux-ld -Ttext 0 $^ -o $@.elf
+	arm-linux-objcopy -O binary -S $@.elf $@.bin
+	arm-linux-objdump -D $@.elf > $@.dis
+
+start.o: start.S
+	arm-linux-gcc -c -o start.o start.S
+
+led.o: led.c
+	arm-linux-gcc -c -o led.o led.c
+
+clean:
+	@echo 清理工程...
+	rm -rf *.o *.bin *.elf *.dis
+```
+
+标准编译得到的反汇编文件如下，满足ARM汇编传参规则
+
+```s
+led.elf:     file format elf32-littlearm
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	e3a0da01 	mov	sp, #4096	; 0x1000
+   4:	e3a00004 	mov	r0, #4	; 0x4
+   8:	eb000011 	bl	54 <led_on>
+   c:	e59f000c 	ldr	r0, [pc, #12]	; 20 <.text+0x20>
+  10:	eb000003 	bl	24 <delay>
+  14:	e3a00005 	mov	r0, #5	; 0x5
+  18:	eb00000d 	bl	54 <led_on>
+
+0000001c <halt>:
+  1c:	eafffffe 	b	1c <halt>
+  20:	000186a0 	andeq	r8, r1, r0, lsr #13
+
+00000024 <delay>:
+  24:	e1a0c00d 	mov	ip, sp
+  28:	e92dd800 	stmdb	sp!, {fp, ip, lr, pc}
+  2c:	e24cb004 	sub	fp, ip, #4	; 0x4
+  30:	e24dd004 	sub	sp, sp, #4	; 0x4
+  34:	e50b0010 	str	r0, [fp, #-16]
+  38:	e51b3010 	ldr	r3, [fp, #-16]
+  3c:	e2433001 	sub	r3, r3, #1	; 0x1
+  40:	e50b3010 	str	r3, [fp, #-16]
+  44:	e3730001 	cmn	r3, #1	; 0x1
+  48:	0a000000 	beq	50 <delay+0x2c>
+  4c:	eafffff9 	b	38 <delay+0x14>
+  50:	e89da808 	ldmia	sp, {r3, fp, sp, pc}
+
+00000054 <led_on>:
+  54:	e1a0c00d 	mov	ip, sp
+  58:	e92dd800 	stmdb	sp!, {fp, ip, lr, pc}
+  5c:	e24cb004 	sub	fp, ip, #4	; 0x4
+  60:	e24dd00c 	sub	sp, sp, #12	; 0xc
+  64:	e50b0010 	str	r0, [fp, #-16]
+  68:	e3a03456 	mov	r3, #1442840576	; 0x56000000
+  6c:	e2833050 	add	r3, r3, #80	; 0x50
+  70:	e50b3014 	str	r3, [fp, #-20]
+  74:	e3a03456 	mov	r3, #1442840576	; 0x56000000
+  78:	e2833054 	add	r3, r3, #84	; 0x54
+  7c:	e50b3018 	str	r3, [fp, #-24]
+  80:	e51b3010 	ldr	r3, [fp, #-16]
+  84:	e3530004 	cmp	r3, #4	; 0x4
+  88:	1a000003 	bne	9c <led_on+0x48>
+  8c:	e51b2014 	ldr	r2, [fp, #-20]
+  90:	e3a03c01 	mov	r3, #256	; 0x100
+  94:	e5823000 	str	r3, [r2]
+  98:	ea00000c 	b	d0 <led_on+0x7c>
+  9c:	e51b3010 	ldr	r3, [fp, #-16]
+  a0:	e3530005 	cmp	r3, #5	; 0x5
+  a4:	1a000003 	bne	b8 <led_on+0x64>
+  a8:	e51b2014 	ldr	r2, [fp, #-20]
+  ac:	e3a03b01 	mov	r3, #1024	; 0x400
+  b0:	e5823000 	str	r3, [r2]
+  b4:	ea000005 	b	d0 <led_on+0x7c>
+  b8:	e51b3010 	ldr	r3, [fp, #-16]
+  bc:	e3530006 	cmp	r3, #6	; 0x6
+  c0:	1a000002 	bne	d0 <led_on+0x7c>
+  c4:	e51b2014 	ldr	r2, [fp, #-20]
+  c8:	e3a03a01 	mov	r3, #4096	; 0x1000
+  cc:	e5823000 	str	r3, [r2]
+  d0:	e51b3018 	ldr	r3, [fp, #-24]
+  d4:	e3a02000 	mov	r2, #0	; 0x0
+  d8:	e5832000 	str	r2, [r3]
+  dc:	e3a03000 	mov	r3, #0	; 0x0
+  e0:	e1a00003 	mov	r0, r3
+  e4:	e24bd00c 	sub	sp, fp, #12	; 0xc
+  e8:	e89da800 	ldmia	sp, {fp, sp, pc}
+Disassembly of section .comment:
+
+00000000 <.comment>:
+   0:	43434700 	cmpmi	r3, #0	; 0x0
+   4:	4728203a 	undefined
+   8:	2029554e 	eorcs	r5, r9, lr, asr #10
+   c:	2e342e33 	mrccs	14, 1, r2, cr4, cr3, {1}
+  10:	Address 0x10 is out of bounds.
+```
+
+如果在Makefile中增加编译选项`-fomit-frame-pointer`，可以通过不保存fp寄存器来优化性能
+
+`Makefile -fomit-frame-pointer`，可以看到，此时的反汇编文件完全不同了
+
+```mk
+led.elf:     file format elf32-littlearm
+
+Disassembly of section .text:
+
+00000000 <_start>:
+   0:	e3a0da01 	mov	sp, #4096	; 0x1000
+   4:	e3a00004 	mov	r0, #4	; 0x4
+   8:	eb00000f 	bl	4c <led_on>
+   c:	e59f000c 	ldr	r0, [pc, #12]	; 20 <.text+0x20>
+  10:	eb000003 	bl	24 <delay>
+  14:	e3a00005 	mov	r0, #5	; 0x5
+  18:	eb00000b 	bl	4c <led_on>
+
+0000001c <halt>:
+  1c:	eafffffe 	b	1c <halt>
+  20:	000186a0 	andeq	r8, r1, r0, lsr #13
+
+00000024 <delay>:
+  24:	e24dd004 	sub	sp, sp, #4	; 0x4
+  28:	e58d0000 	str	r0, [sp]
+  2c:	e59d3000 	ldr	r3, [sp]
+  30:	e2433001 	sub	r3, r3, #1	; 0x1
+  34:	e58d3000 	str	r3, [sp]
+  38:	e3730001 	cmn	r3, #1	; 0x1
+  3c:	0a000000 	beq	44 <delay+0x20>
+  40:	eafffff9 	b	2c <delay+0x8>
+  44:	e28dd004 	add	sp, sp, #4	; 0x4
+  48:	e1a0f00e 	mov	pc, lr
+
+0000004c <led_on>:
+  4c:	e24dd00c 	sub	sp, sp, #12	; 0xc
+  50:	e58d0008 	str	r0, [sp, #8]
+  54:	e3a03456 	mov	r3, #1442840576	; 0x56000000
+  58:	e2833050 	add	r3, r3, #80	; 0x50
+  5c:	e58d3004 	str	r3, [sp, #4]
+  60:	e3a03456 	mov	r3, #1442840576	; 0x56000000
+  64:	e2833054 	add	r3, r3, #84	; 0x54
+  68:	e58d3000 	str	r3, [sp]
+  6c:	e59d3008 	ldr	r3, [sp, #8]
+  70:	e3530004 	cmp	r3, #4	; 0x4
+  74:	1a000003 	bne	88 <led_on+0x3c>
+  78:	e59d2004 	ldr	r2, [sp, #4]
+  7c:	e3a03c01 	mov	r3, #256	; 0x100
+  80:	e5823000 	str	r3, [r2]
+  84:	ea00000c 	b	bc <led_on+0x70>
+  88:	e59d3008 	ldr	r3, [sp, #8]
+  8c:	e3530005 	cmp	r3, #5	; 0x5
+  90:	1a000003 	bne	a4 <led_on+0x58>
+  94:	e59d2004 	ldr	r2, [sp, #4]
+  98:	e3a03b01 	mov	r3, #1024	; 0x400
+  9c:	e5823000 	str	r3, [r2]
+  a0:	ea000005 	b	bc <led_on+0x70>
+  a4:	e59d3008 	ldr	r3, [sp, #8]
+  a8:	e3530006 	cmp	r3, #6	; 0x6
+  ac:	1a000002 	bne	bc <led_on+0x70>
+  b0:	e59d2004 	ldr	r2, [sp, #4]
+  b4:	e3a03a01 	mov	r3, #4096	; 0x1000
+  b8:	e5823000 	str	r3, [r2]
+  bc:	e59d3000 	ldr	r3, [sp]
+  c0:	e3a02000 	mov	r2, #0	; 0x0
+  c4:	e5832000 	str	r2, [r3]
+  c8:	e3a03000 	mov	r3, #0	; 0x0
+  cc:	e1a00003 	mov	r0, r3
+  d0:	e28dd00c 	add	sp, sp, #12	; 0xc
+  d4:	e1a0f00e 	mov	pc, lr
+Disassembly of section .comment:
+
+00000000 <.comment>:
+   0:	43434700 	cmpmi	r3, #0	; 0x0
+   4:	4728203a 	undefined
+   8:	2029554e 	eorcs	r5, r9, lr, asr #10
+   c:	2e342e33 	mrccs	14, 1, r2, cr4, cr3, {1}
+  10:	Address 0x10 is out of bounds.
+```
+
+## *看门狗*
+
+*在做裸机开发时，应该先关闭看门狗，防止系统发生不受预期的重启。*
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/4.12_wdg.png)
+
