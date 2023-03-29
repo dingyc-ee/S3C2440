@@ -670,3 +670,91 @@ _start:
 halt:
     b halt
 ```
+
+## *按键点亮LED*
+
+原理图如下，3个按键分为EINT11(GPG3) EINT2(GPF2) EINT0(GPF0)。
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/4.13_ket_eint.png)
+
+对应的GPIO如下图所示
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/4.14_key_io.png)
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/4.15_key_io.png)
+
+GPIO输入模式的2位要设为0
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/4.16_key_input.png)
+
+3个按键对应3个LED灯
+
+|KEY|LED|
+|---|---|
+|GPG3|GPF4|
+|GPF2|GPF5|
+|GPF0|GPF6|
+
+实测代码：
+
+```c
+#include "s3c2440_soc.h"
+
+void delay(volatile int i)
+{
+    while (i--);
+}
+
+int main(int which)
+{
+    unsigned int val1, val2;
+
+    // 配置LED为输出引脚
+    // LED顺序：GPF4 GPF5 GPF6
+    GPFCON &= ~((3 << 8) | (3 << 10) | (3 << 12));
+    GPFCON |=  ((1 << 8) | (1 << 10) | (1 << 12));
+
+    // 配置KEY为输入引脚
+    // KEY顺序：GPG3 GPF2 GPF0
+    GPGCON &= ~(3 << 6);
+    GPFCON &= ~((3 << 0) | (3 << 4));
+
+    while (1) {
+        val1 = GPFDAT;
+        val2 = GPGDAT;
+
+        // KEY:GPG3 -> LED:GPF4
+        if (val2 & (1 << 3)) {
+            // 松开
+            GPFDAT |= (1 << 4);
+        }
+        else {
+            // 按下
+            GPFDAT &= ~(1 << 4);
+        }
+
+        // KEY:GPF2 -> LED:GPF5
+        if (val1 & (1 << 2)) {
+            // 松开
+            GPFDAT |= (1 << 5);
+        }
+        else {
+            // 按下
+            GPFDAT &= ~(1 << 5);
+        }
+
+        // KEY:GPF0 -> LED:GPF6
+        if (val1 & (1 << 0)) {
+            // 松开
+            GPFDAT |= (1 << 6);
+        }
+        else {
+            // 按下
+            GPFDAT &= ~(1 << 6);
+        }
+
+    }
+
+    return 0;
+}
+```
