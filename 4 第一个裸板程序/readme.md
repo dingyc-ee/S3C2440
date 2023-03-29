@@ -550,3 +550,123 @@ Disassembly of section .comment:
 
 ![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/4.12_wdg.png)
 
+## *自动分辨nor/nand启动*
+
+*重点是cmp指令。比较两个寄存器值，如果相等会设置eq标志位。此时可以通过其他指令+eq后缀，如ldreq streq来进行条件执行。*
+
+```mk
+_start:
+    // 关闭看门狗
+    ldr r0, =0
+    ldr r1, =0x53000000
+    str r0, [r1]
+
+    // 设置内存栈: SP栈
+    // 分辨时nor/nand启动
+    // 写0到0地址再读出来，如果得到0，表示0地址的内容被修改，对应ram，即nand启动，否则是nor启动
+    ldr r0, =0
+    ldr r1, [r0]    // 原来0地址的内容保存在r1
+    str r0, [r0]    // 0写入0地址
+    ldr r2, [r0]    // 0地址内容读到r2
+    ldr sp, =0x40000000 + 4096  // 先假设是nor启动
+    cmp r0, r2
+    ldreq sp, =4096 // 设置栈
+    streq r1, [r0]  // 恢复原来0地址的内容
+```
+
+## *循环点亮LED*
+
+*把寄存器全部定义到统一的.h文件中，然后在makefile中引用*
+
+`Makefile`
+```mk
+# $@ 目标文件: 此处为led，即最终要生成的文件
+# $^ 所有依赖 此处为start.o led.o
+# $< 第一个依赖 此处为start.o
+
+led_loop: start.o led_loop.o
+	@echo 开始编译...
+	arm-linux-ld -Ttext 0 $^ -o $@.elf
+	arm-linux-objcopy -O binary -S $@.elf $@.bin
+	arm-linux-objdump -D $@.elf > $@.dis
+
+start.o: start.S
+	arm-linux-gcc -c -o $@ $<
+
+led_loop.o: led_loop.c s3c2440_soc.h
+	arm-linux-gcc -c -o $@ $<
+
+clean:
+	@echo 清理工程...
+	rm -rf *.o *.bin *.elf *.dis
+```
+
+`led_loop.c`
+
+```c
+#include "s3c2440_soc.h"
+
+void delay(volatile int i)
+{
+    while (i--);
+}
+
+int main(int which)
+{
+    GPFCON &= ~((3 << 8) | (3 << 10) | (3 << 12));
+    GPFCON |=  ((1 << 8) | (1 << 10) | (1 << 12));
+
+    while (1) {
+        GPFDAT = ~(1 << 4);
+        delay(100000);
+        GPFDAT = ~(1 << 5);
+        delay(100000);
+        GPFDAT = ~(1 << 6);
+        delay(100000);
+    }
+
+    return 0;
+```
+
+`s3c2440_soc.h`
+
+```c
+#ifndef __S3C2440_SOC_H__
+#define __S3C2440_SOC_H__
+
+#define GPFCON  (*((volatile unsigned int *)0x56000050))
+#define GPFDAT  (*((volatile unsigned int *)0x56000054))
+
+#endif  /* __S3C2440_SOC_H__ */
+```
+
+`启动文件start.S`
+
+```s
+.text
+.global _start
+
+_start:
+    // 关闭看门狗
+    ldr r0, =0
+    ldr r1, =0x53000000
+    str r0, [r1]
+
+    // 设置内存栈: SP栈
+    // 分辨时nor/nand启动
+    // 写0到0地址再读出来，如果得到0，表示0地址的内容被修改，对应ram，即nand启动，否则是nor启动
+    ldr r0, =0
+    ldr r1, [r0]    // 原来0地址的内容保存在r1
+    str r0, [r0]    // 0写入0地址
+    ldr r2, [r0]    // 0地址内容读到r2
+    ldr sp, =0x40000000 + 4096  // 先假设是nor启动
+    cmp r0, r2
+    ldreq sp, =4096 // 设置栈
+    streq r1, [r0]  // 恢复原来0地址的内容
+
+    bl main
+
+    // 死循环
+halt:
+    b halt
+```

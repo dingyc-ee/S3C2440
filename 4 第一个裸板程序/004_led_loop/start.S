@@ -1,0 +1,27 @@
+
+.text
+.global _start
+
+_start:
+    // 关闭看门狗
+    ldr r0, =0
+    ldr r1, =0x53000000
+    str r0, [r1]
+
+    // 设置内存栈: SP栈
+    // 分辨时nor/nand启动
+    // 写0到0地址再读出来，如果得到0，表示0地址的内容被修改，对应ram，即nand启动，否则是nor启动
+    ldr r0, =0
+    ldr r1, [r0]    // 原来0地址的内容保存在r1
+    str r0, [r0]    // 0写入0地址
+    ldr r2, [r0]    // 0地址内容读到r2
+    ldr sp, =0x40000000 + 4096  // 先假设是nor启动
+    cmp r0, r2
+    ldreq sp, =4096 // 设置栈
+    streq r1, [r0]  // 恢复原来0地址的内容
+
+    bl main
+
+    // 死循环
+halt:
+    b halt
