@@ -160,12 +160,12 @@ ding@linux:~/s3c2440/006_gcc$ ldd hello
 
 ```sh
 # 默认动态链接
-ding@linux:~/s3c2440/006_gcc$ gcc -o hello_dynamic hello.o  # 或者 gcc -dynamic -o hello_dynamic hello.o
+ding@linux:~/s3c2440/006_gcc$ gcc -o hello_shared hello.o   # 或者 gcc -shared -o hello_shared hello.o
 # 静态链接
 ding@linux:~/s3c2440/006_gcc$ gcc -static -o hello_static hello.o
 ding@linux:~/s3c2440/006_gcc$ ls -l
 -rw-rw-r-- 1 ding ding    410  3月 29 22:21 hello.c
--rwxrwxr-x 1 ding ding  16000  4月 10 22:32 hello_dynamic   # 动态链接文件大小
+-rwxrwxr-x 1 ding ding  16000  4月 10 22:32 hello_shared    # 动态链接文件大小
 -rw-rw-r-- 1 ding ding   1880  4月 10 21:53 hello.o
 -rwxrwxr-x 1 ding ding 900400  4月 10 22:32 hello_static    # 静态链接文件大小
 # 静态链接文件类型:statically linked
