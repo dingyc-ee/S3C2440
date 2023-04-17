@@ -175,3 +175,164 @@ hello_static: ELF 64-bit LSB executable, x86-64, version 1 (GNU/Linux), statical
 ding@linux:~/s3c2440/006_gcc$ ldd hello_static 
         不是动态可执行文件
 ```
+
+## GCC生成依赖
+
+[参考文章链接](https://blog.csdn.net/QQ1452008/article/details/50855810)
+
+### 为什么要生成依赖?
+
+*在Makefile中，目标的依赖需要包含一系列头文件。这些文件我们不可能手动去写，因此需要gcc来自动推导生成依赖。*
+
+### 测试代码
+
+`main.c`
+
+```c
+#include <stdio.h>
+#include "defs.h"
+
+int main(int argc, char *argv[])
+{
+    printf("hello, %s\n", NAME);
+    return 0;
+}
+```
+
+`defs.h`
+
+```c
+#ifndef __DEFS_H__
+#define __DEFS_H__
+
+#define NAME    "makefile"
+
+#endif  /* __DEFS_H__ */
+```
+
+### 编译选项 -M 生成依赖(包含标准库)，但不编译
+
+```sh
+ding@linux:~/s3c2440/006_gcc$ gcc -M main.c 
+main.o: main.c /usr/include/stdc-predef.h /usr/include/stdio.h \
+ /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
+ /usr/include/features.h /usr/include/features-time64.h \
+ /usr/include/x86_64-linux-gnu/bits/wordsize.h \
+ /usr/include/x86_64-linux-gnu/bits/timesize.h \
+ /usr/include/x86_64-linux-gnu/sys/cdefs.h \
+ /usr/include/x86_64-linux-gnu/bits/long-double.h \
+ /usr/include/x86_64-linux-gnu/gnu/stubs.h \
+ /usr/include/x86_64-linux-gnu/gnu/stubs-64.h \
+ /usr/lib/gcc/x86_64-linux-gnu/11/include/stddef.h \
+ /usr/lib/gcc/x86_64-linux-gnu/11/include/stdarg.h \
+ /usr/include/x86_64-linux-gnu/bits/types.h \
+ /usr/include/x86_64-linux-gnu/bits/typesizes.h \
+ /usr/include/x86_64-linux-gnu/bits/time64.h \
+ /usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h \
+ /usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h \
+ /usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h \
+ /usr/include/x86_64-linux-gnu/bits/types/__FILE.h \
+ /usr/include/x86_64-linux-gnu/bits/types/FILE.h \
+ /usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h \
+ /usr/include/x86_64-linux-gnu/bits/stdio_lim.h \
+ /usr/include/x86_64-linux-gnu/bits/floatn.h \
+ /usr/include/x86_64-linux-gnu/bits/floatn-common.h defs.h
+```
+
+### 编译选项 -MM 生成依赖(不包含标准库)，但不编译
+
+```sh
+ding@linux:~/s3c2440/006_gcc$ gcc -MM  main.c 
+main.o: main.c defs.h
+```
+
+### 编译选项 -MF 指定输出文件
+
+```sh
+# 依赖信息写入文件
+ding@linux:~/s3c2440/006_gcc$ gcc -M -MF main.d main.c
+
+# 打印文件内容
+ding@linux:~/s3c2440/006_gcc$ cat main.d 
+main.o: main.c /usr/include/stdc-predef.h /usr/include/stdio.h \
+ /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
+ /usr/include/features.h /usr/include/features-time64.h \
+ /usr/include/x86_64-linux-gnu/bits/wordsize.h \
+ /usr/include/x86_64-linux-gnu/bits/timesize.h \
+ /usr/include/x86_64-linux-gnu/sys/cdefs.h \
+ /usr/include/x86_64-linux-gnu/bits/long-double.h \
+ /usr/include/x86_64-linux-gnu/gnu/stubs.h \
+ /usr/include/x86_64-linux-gnu/gnu/stubs-64.h \
+ /usr/lib/gcc/x86_64-linux-gnu/11/include/stddef.h \
+ /usr/lib/gcc/x86_64-linux-gnu/11/include/stdarg.h \
+ /usr/include/x86_64-linux-gnu/bits/types.h \
+ /usr/include/x86_64-linux-gnu/bits/typesizes.h \
+ /usr/include/x86_64-linux-gnu/bits/time64.h \
+ /usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h \
+ /usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h \
+ /usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h \
+ /usr/include/x86_64-linux-gnu/bits/types/__FILE.h \
+ /usr/include/x86_64-linux-gnu/bits/types/FILE.h \
+ /usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h \
+ /usr/include/x86_64-linux-gnu/bits/stdio_lim.h \
+ /usr/include/x86_64-linux-gnu/bits/floatn.h \
+ /usr/include/x86_64-linux-gnu/bits/floatn-common.h defs.h
+```
+
+### 编译选项 -MD 生成依赖(包含标准库)，编译，并写入文件 类似于-M -MF
+
+```sh
+ding@linux:~/s3c2440/006_gcc$ gcc -MD main.c 
+ding@linux:~/s3c2440/006_gcc$ ls
+a-main.d  a.out  defs.h  main.c
+```
+
+### 编译选项 -MMD 生成依赖(不包含标准库)，编译，并写入文件 类似于-MM -MF
+
+### 编译选项 -MP 给所有.h都在依赖中生成伪目标
+
+*生成的依赖文件里面，依赖规则中的所有.h依赖项都会在该文件中生成一个伪目标，其不依赖任何其他依赖项。该伪规则将避免删除了对应的头文件而没有更新Makefile去匹配新的依赖关系，导致make出错的情况出现。*
+
+```sh
+# 生成的依赖
+ding@linux:~/s3c2440/006_gcc$ gcc -MMD main.c 
+ding@linux:~/s3c2440/006_gcc$ cat a-main.d 
+main.o: main.c defs.h
+
+# -MP选项：每个.h的依赖都有一个伪目标
+ding@linux:~/s3c2440/006_gcc$ gcc -MMD main.c -MP
+ding@linux:~/s3c2440/006_gcc$ cat a-main.d 
+main.o: main.c defs.h
+# .h文件的伪目标
+defs.h:
+```
+
+### 常用的Makefile
+
+```mk
+SRCS=$(wildcard *.c)
+OBJS=$(SRCS:.c=.o)
+DEPS=$(SRCS:.c=.d)
+
+.PHONY: all clean
+
+all: main
+
+#注释:'-'号的作用：加载错误时，会继续执行 make，
+#主要是考虑到首次 make 时，目录中若不存在 '*.d' 文件时，
+#加载便会产生错误而停止 make 的执行
+-include $(DEPS)	
+
+%.o:%.c
+	gcc -c -g -Wall $< -o $@ -MD -MF $*.d -MP 
+
+main: $(OBJS)
+	gcc $^ -o $@   #注释:$^:表示所有的依赖文件 $@:表示目标文件
+
+clean: 
+	rm -f  *.d *.o main
+```
+
+### 编译选项 -Werror 把所有的警告都当成错误
+
+`gcc -Werror -c -o main.o main.c`
