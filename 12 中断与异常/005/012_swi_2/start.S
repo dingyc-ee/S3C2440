@@ -9,8 +9,10 @@ _start:
 	 * ldr pc, un_addr，即ldr pc, [0x3000 0008]
 	 */
 	ldr pc, und_addr	/* vector 4 : und */
+	ldr pc, swi_addr	/* vector 8 : swi */
 
 und_addr: .word do_und
+swi_addr: .word do_swi
 
 do_und:
 	/* sp_und未设置，先设置它 */
@@ -31,6 +33,33 @@ do_und:
 
 und_string:
 	.string "undefined instruction exception"
+
+.align 4
+
+do_swi:
+	/* sp_svc未设置，先设置它 */
+	ldr sp, =0x33e00000
+
+	/* 保存现场 */
+	/* 在svc异常处理函数中，有可能会修改r0-r12，所以先保存 */
+	/* 发生swi异常时，返回地址保存在lr寄存器中，而异常处理C函数也会使用到lr，所以lr也要保存 */
+	stmdb sp!, {r0-r12, lr}
+
+	mov r4, lr
+
+	/* 处理swi异常 */
+	mrs r0, cpsr
+	ldr r1, =swi_string
+	bl printException
+
+	sub r0, r4, #4
+	bl printSWIVal
+
+	/* 恢复现场 */
+	ldmia sp!, {r0-r12, pc}^	/* ^会把spsr的值恢复到cpsr里 */
+
+swi_string:
+	.string "swi exception"
 
 .align 4
 
@@ -95,6 +124,15 @@ reset:
 	/* 清除BSS段 */
 	bl clean_bss
 
+	/* 复位之后，CPU处于svc模式 */
+	/* 现在，切换到usr模式 */
+	mrs r0, cpsr		/* 读出cpsr */
+	bic r0, r0, #0xf	/* 修改M4-M0为0b10000，进入usr模式 */
+	msr cpsr, r0
+
+	/* 设置sp_usr */
+	ldr sp, =0x33f00000
+
 	/* 初始化串口，还没进入main函数就发生了und异常，所以要先初始化uart */
 	ldr pc, =sdram
 sdram:
@@ -103,6 +141,8 @@ sdram:
 	/* 故意加入一条未定义指令 */
 und_code:
 	.word 0xdeadc0de
+
+	swi 0x123				/* 执行此命令，触发swi异常，进入0x8地址执行 */
 
 	ldr pc, =main			/* 绝对跳转, 跳到SDRAM */
 
