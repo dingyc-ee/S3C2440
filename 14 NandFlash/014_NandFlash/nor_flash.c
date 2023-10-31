@@ -32,7 +32,7 @@ unsigned int nor_dat(unsigned int offset)
 }
 
 
-void wait_ready(unsigned int addr)
+static void wait_ready(unsigned int addr)
 {
 	unsigned int val;
 	unsigned int pre;

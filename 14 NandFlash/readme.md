@@ -280,3 +280,302 @@ void nand_chip_id(void)
 实测效果：
 
 ![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/14_12.png)
+
+# *读数据*
+
+NAND Flash内部结构图。可以看到，1个块（block）包括64个页（page），而每个页（page）包括2048字节的数据区域+64字节的OOB校验区。访问NAND时，要先发出Col列地址，再发出Row行地址。这些地址从哪来？
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/14_13.png)
+
+NAND Flash布局如下图所示。每一行表示一个Page，每一列表示Page中的第几个数据。所以我们要读取某个地址的数据时，要计算出Page（行地址）和Col（列地址），`列地址范围：0~2047`，然后依次发出这些地址。OOB区域CPU不可访问，是NAND Flash自己用来纠错的。
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/14_14.png)
+
+读数据时序分析：
+
+1. 拉低片选信号CE
+2. 发出0x00命令
+3. 发出2次列地址
+4. 发出3次Page行地址
+5. 发出0x30命令
+6. R/B管脚等待Busy，Busy期间为低电平
+7. 开始读数据
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/14_15.png)
+
+*注意：NAND一次最多读取1个Page的数据，超过了要重新发出这些命令。*
+
+NAND读取代码如下：
+
+```c
+void nand_read(unsigned int addr, unsigned char *buf, unsigned int len)
+{
+	int i = 0;
+	int page = addr / 2048;
+	int col  = addr & (2048 - 1);
+	
+	nand_select(); 
+
+	while (i < len)
+	{
+		/* 发出00h命令 */
+		nand_cmd(00);
+
+		/* 发出地址 */
+		/* col addr */
+		nand_addr_byte(col & 0xff);
+		nand_addr_byte((col>>8) & 0xff);
+
+		/* row/page addr */
+		nand_addr_byte(page & 0xff);
+		nand_addr_byte((page>>8) & 0xff);
+		nand_addr_byte((page>>16) & 0xff);
+
+		/* 发出30h命令 */
+		nand_cmd(0x30);
+
+		/* 等待就绪 */
+		wait_ready();
+
+		/* 读数据 */
+		for (; (col < 2048) && (i < len); col++)
+		{
+			buf[i++] = nand_data();			
+		}
+		if (i == len)
+			break;
+
+		col = 0;
+		page++;
+	}
+	
+	nand_deselect(); 	
+}
+```
+
+如何检测Busy？*实际上就是读R/B（Ready/Busy）管脚电平。高电平为就绪，低电平为忙碌。*
+
+2440的NASTAT状态寄存器，可以读RnB管脚的电平。
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/14_16.png)
+
+检测NAND忙碌的代码，低电平表示忙碌，一直等待。
+
+```c
+void wait_ready(void)
+{
+	while (!(NFSTAT & 1));
+}
+```
+
+既然我们已经能读取NAND的数据了，那应该就能够支持NAND上电启动。怎么做？
+
+*在代码重定位函数中，区分是Nor启动还是Nand启动。如果是Nor启动直接读取，如果是Nand启动，先初始化Nand，再从Nand读数据到SDRAM。*
+
+```c
+void copy2sdram(void)
+{
+	/* 要从lds文件中，获得 __code_start, __bss_start
+	 * 然后从0地址把数据复制到 __code_start
+	 */
+
+	/* 这里引用了2个外部符号 */
+	extern int __code_start, __bss_start;
+
+	volatile unsigned int *src  = (volatile unsigned int *)0;
+	volatile unsigned int *dest = (volatile unsigned int *)&__code_start;	/* 取符号的地址 */
+	volatile unsigned int *end  = (volatile unsigned int *)&__bss_start;	/* 取符号的地址 */
+	int len;
+
+	len = ((int)&__bss_start) - ((int)&__code_start);
+
+	if (isBootFromNorFlash())
+	{
+		while (dest < end)
+		{
+			*dest++ = *src++;
+		}
+	}
+	else
+	{
+		nand_init();
+		nand_read(src, dest, len);
+	}
+}
+```
+
+如何判断是Nor还是Nand启动呢？很简单，往0地址写值再读回来，如果相等证明是Nand启动，不相等则为Nor启动。
+
+```c
+int isBootFromNorFlash(void)
+{
+	volatile unsigned int *p = (volatile unsigned int *)0;
+	unsigned int val = *p;
+
+	*p = 0x12345678;
+	if (*p == 0x12345678)
+	{
+		/* 写成功, 对应nand启动 */
+		*p = val;
+		return 0;
+	}
+	else
+	{
+		return 1;
+	}
+}
+```
+
+*<font color=red>注意：由于Nand启动时，CPU会从NAND只拷贝前4KB来执行。因此，我们的启动文件start.S、SDRAM初始化+代码重定位文件init.c、中断处理interrupt.c、nand操作nand_flash.c必须处于前4K的代码中。</font>*怎么做？很简单，把这几个文件放在Makefile的最前面。
+
+```makefile
+# $@ 目标文件
+# $^ 所有依赖
+# $< 第一个依赖
+
+TARGET = NandFlash
+OBJ = start.o init.o interrupt.o nand_flash.o uart.o main.o led.o exception.o timer.o my_printf.o nor_flash.o string_utils.o lib1funcs.o
+
+$(TARGET): $(OBJ)
+	@echo 开始编译...
+	arm-linux-ld -T sdram.lds $^ -o $@.elf
+	arm-linux-objcopy -O binary -S $@.elf $@.bin
+	arm-linux-objdump -D $@.elf > $@.dis
+
+# 如果不加-march=armv4选项，对Nor的16bit写入会被编译成2次strb写入，导致Nor写入出错。-march=armv4来自u-boot
+%.o: %.c
+	arm-linux-gcc -march=armv4 -c -o $@ $<
+
+%.o: %.S
+	arm-linux-gcc -march=armv4 -c -o $@ $<
+
+clean:
+	@echo 清理工程...
+	rm -rf *.o *.bin *.elf *.dis
+```
+
+编译烧写到NAND Flash，选择NAND启动，测试结果如下。能够正常启动，，也能识别到NAND芯片ID。
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/14_17.png)
+
+# *擦除block*
+
+NAND Flash只能以block块（128KB）为单位，来进行擦除。擦除时序如下：
+
+1. 发出0x60命令
+2. 发出3次行地址（Page号）
+3. 发出0xD0命令
+4. 等待Busy位擦除完成
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/14_18.png)
+
+擦除NAND block代码：
+
+```c
+int nand_erase(unsigned int addr, unsigned int len)
+{
+	int page = addr / 2048;
+
+	if (addr & (0x1FFFF))
+	{
+		printf("nand_erase err, addr is not block align\n\r");
+		return -1;
+	}
+	
+	if (len & (0x1FFFF))
+	{
+		printf("nand_erase err, len is not block align\n\r");
+		return -1;
+	}
+	
+	nand_select(); 
+
+	while (1)
+	{
+		page = addr / 2048;
+		
+		nand_cmd(0x60);
+		
+		/* row/page addr */
+		nand_addr_byte(page & 0xff);
+		nand_addr_byte((page>>8) & 0xff);
+		nand_addr_byte((page>>16) & 0xff);
+
+		nand_cmd(0xD0);
+
+		wait_ready();
+
+		len -= (128*1024);
+		if (len == 0)
+			break;
+		addr += (128*1024);
+	}
+	
+	nand_deselect(); 	
+	return 0;
+}
+```
+
+# *写操作*
+
+NAND Flash的写操作，以页（Page）为单位。操作流程如下：
+
+1. 发出0x80命令
+2. 发出5次地址
+3. 发出数据
+4. 发出0x10命令
+5. 等待Busy
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/14_19.png)
+
+写NAND Flash操作代码：
+
+```c
+void nand_write(unsigned int addr, unsigned char *buf, unsigned int len)
+{
+	int page = addr / 2048;
+	int col  = addr & (2048 - 1);
+	int i = 0;
+
+	nand_select(); 
+
+	while (1)
+	{
+		nand_cmd(0x80);
+
+		/* 发出地址 */
+		/* col addr */
+		nand_addr_byte(col & 0xff);
+		nand_addr_byte((col>>8) & 0xff);
+		
+		/* row/page addr */
+		nand_addr_byte(page & 0xff);
+		nand_addr_byte((page>>8) & 0xff);
+		nand_addr_byte((page>>16) & 0xff);
+
+		/* 发出数据 */
+		for (; (col < 2048) && (i < len); )
+		{
+			nand_w_data(buf[i++]);
+		}
+		nand_cmd(0x10);
+		wait_ready();
+
+		if (i == len)
+			break;
+		else
+		{
+			/* 开始下一个循环page */
+			col = 0;
+			page++;
+		}
+		
+	}
+	
+	nand_deselect(); 	
+}
+```
+
+# *NAND Flash读写擦除测试*
+
+![](https://ding-aliyun.oss-cn-shenzhen.aliyuncs.com/s3c2440/14_20.png)

@@ -4,7 +4,7 @@
 # $< 第一个依赖
 
 TARGET = NandFlash
-OBJ = start.o uart.o init.o main.o led.o exception.o interrupt.o timer.o my_printf.o nor_flash.o nand_flash.o string_utils.o lib1funcs.o
+OBJ = start.o init.o interrupt.o nand_flash.o uart.o main.o led.o exception.o timer.o my_printf.o nor_flash.o string_utils.o lib1funcs.o
 
 $(TARGET): $(OBJ)
 	@echo 开始编译...

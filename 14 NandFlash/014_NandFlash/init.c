@@ -33,6 +33,27 @@ int sdram_test(void)
 	return 0;
 }
 
+int isBootFromNorFlash(void)
+{
+	volatile unsigned int *p = (volatile unsigned int *)0;
+	unsigned int val = *p;
+
+	*p = 0x12345678;
+	if (*p == 0x12345678)
+	{
+		/* 写成功, 对应nand启动 */
+		*p = val;
+		return 0;
+	}
+	else
+	{
+		return 1;
+	}
+}
+
+void nand_init(void);
+void nand_read(unsigned int addr, unsigned char *buf, unsigned int len);
+
 void copy2sdram(void)
 {
 	/* 要从lds文件中，获得 __code_start, __bss_start
@@ -45,9 +66,21 @@ void copy2sdram(void)
 	volatile unsigned int *src  = (volatile unsigned int *)0;
 	volatile unsigned int *dest = (volatile unsigned int *)&__code_start;	/* 取符号的地址 */
 	volatile unsigned int *end  = (volatile unsigned int *)&__bss_start;	/* 取符号的地址 */
+	int len;
 
-	while (dest < end) {
-		*dest++ = *src++;
+	len = ((int)&__bss_start) - ((int)&__code_start);
+
+	if (isBootFromNorFlash())
+	{
+		while (dest < end)
+		{
+			*dest++ = *src++;
+		}
+	}
+	else
+	{
+		nand_init();
+		nand_read(src, dest, len);
 	}
 }
 

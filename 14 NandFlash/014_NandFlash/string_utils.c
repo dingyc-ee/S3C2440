@@ -149,6 +149,19 @@ char *gets(char s[])
 	return s;
 }
 
+/**
+ * strlen - Find the length of a string
+ * @s: The string to be sized
+ */
+int strlen(const char * s)
+{
+	const char *sc;
+
+	for (sc = s; *sc != '\0'; ++sc)
+		/* nothing */;
+	return sc - s;
+}
+
 int get_int(void)
 {
 	char str[100];
